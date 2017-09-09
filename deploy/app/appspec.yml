@@ -1,0 +1,23 @@
+version: 0.0
+os: linux
+files:
+  - source: etc/
+    destination: /etc/
+  - source: application/
+    destination: /opt/php-webservice/
+hooks:
+  BeforeInstall:
+    - location: scripts/clean_files.sh
+      timeout: 120
+      runas: root
+  AfterInstall:
+    - location: scripts/cache_writable.sh
+      runas: root
+      timeout: 120
+    - location: scripts/configure-environment.sh
+      runas: root
+      timeout: 120
+  ApplicationStart:
+    - location: scripts/restart_nginx.sh
+      timeout: 120
+      runas: root
