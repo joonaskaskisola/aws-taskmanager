@@ -77,7 +77,6 @@ Resources:
         UnhealthyThreshold: '5'
         Interval: '30'
         Timeout: '5'
-
   S3Bucket:
     Type: 'AWS::S3::Bucket'
   DeploymentGroup:
@@ -274,6 +273,13 @@ Resources:
           - DBEC2SecurityGroup
           - GroupId
 Outputs:
+  ELBUrl:
+    Value: !Join
+      - ''
+      - - 'http://'
+        - !GetAtt
+          - ElasticLoadBalancer
+          - DNSName
   Bucket:
     Value: !Ref S3Bucket
   Application:
