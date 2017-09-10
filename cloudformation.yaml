@@ -1,0 +1,303 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: >-
+  Taskio AWS Cloudformation template.
+Parameters:
+  KeyPair:
+    Description: Amazon EC2 Key Pair
+    Type: 'AWS::EC2::KeyPair::KeyName'
+  InstanceType:
+    Description: EC2 instance class
+    Type: String
+    Default: t2.micro
+    AllowedValues:
+      - t2.micro
+      - m2.small
+    ConstraintDescription: Enter t2.micro or m2.small. Default is t2.micro.
+  AmiId:
+    Description: EC2 Ami ID
+    Type: String
+    Default: ami-24d0115d
+    AllowedPattern: '^ami-[a-zA-Z0-9]*'
+    ConstraintDescription: Enter ami-id. Default is ami-24d0115d
+  VpcId:
+    Description: Amazon default VPC
+    Type: String
+    AllowedPattern: '^vpc-[a-zA-Z0-9]*'
+    Default: vpc-ff84de9a
+    ConstraintDescription: must be a valid VPC identifier. Default is vpc-ff84de9a
+  DBClass:
+    Description: RDS Database instance class
+    Type: String
+    Default: db.t2.micro
+    AllowedValues:
+      - db.t2.micro
+      - db.m2.small
+    ConstraintDescription: Enter db.t2.micro or db.m2.small. Default is db.t2.micro.
+  MultiAZDatabase:
+    Default: 'false'
+    Description: Create a Multi-AZ MySQL Amazon RDS database instance
+    Type: String
+    AllowedValues:
+      - 'true'
+      - 'false'
+    ConstraintDescription: must be either true or false. Default is false
+  DBAllocatedStorage:
+    Default: '5'
+    Description: The size of the database (Gb)
+    Type: Number
+    MinValue: '5'
+    MaxValue: '1024'
+    ConstraintDescription: must be between 5 and 1024Gb.
+  DBPort:
+    Default: '3306'
+    Description: TCP/IP port for the database
+    Type: Number
+    MinValue: '1150'
+    MaxValue: '65535'
+Resources:
+  ElasticLoadBalancer:
+    Type: AWS::ElasticLoadBalancing::LoadBalancer
+    DependsOn: ELBSecurityGroup
+    Properties:
+      SecurityGroups:
+        - !Ref ELBSecurityGroup
+      AvailabilityZones:
+        Fn::GetAZs: ''
+      Listeners:
+      - LoadBalancerPort: '80'
+        InstancePort: '80'
+        Protocol: HTTP
+      HealthCheck:
+        Target:
+          Fn::Join:
+          - ''
+          - - 'HTTP:80'
+            - "/css/taskmanager.css"
+        HealthyThreshold: '3'
+        UnhealthyThreshold: '5'
+        Interval: '30'
+        Timeout: '5'
+
+  S3Bucket:
+    Type: 'AWS::S3::Bucket'
+  DeploymentGroup:
+    Type: "AWS::CodeDeploy::DeploymentGroup"
+    DependsOn: WebServerRole
+    Properties:
+      ApplicationName:
+        Ref: "WebServerApplication"
+      AutoScalingGroups:
+        - !Ref WebServerGroup
+      ServiceRoleArn: !GetAtt WebServerRole.Arn
+  WebServerApplication:
+    Type: "AWS::CodeDeploy::Application"
+  WebServerGroup:
+    Type: "AWS::AutoScaling::AutoScalingGroup"
+    DependsOn: LaunchConfig
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Join
+            - ''
+            - - !Ref AWS::StackName
+              - '-webservice'
+          PropagateAtLaunch: true
+      AvailabilityZones:
+        Fn::GetAZs: ""
+      LaunchConfigurationName:
+        Ref: "LaunchConfig"
+      MinSize: "2"
+      MaxSize: "3"
+      LoadBalancerNames:
+        - !Ref ElasticLoadBalancer
+  LaunchConfig:
+    Type: "AWS::AutoScaling::LaunchConfiguration"
+    DependsOn:
+      - WebServerSecurityGroup
+      - WebServerInstanceProfile
+    Properties:
+      KeyName: !Ref KeyPair
+      ImageId: !Ref AmiId
+      SecurityGroups:
+        - Ref: "WebServerSecurityGroup"
+      InstanceType:
+        Ref: "InstanceType"
+      IamInstanceProfile: !Ref WebServerInstanceProfile
+      BlockDeviceMappings:
+        - DeviceName: "/dev/sda1"
+          Ebs:
+            VolumeSize: "50"
+            VolumeType: "io1"
+            Iops: 200
+  ElasticacheCluster:
+    Type: "AWS::ElastiCache::CacheCluster"
+    DependsOn: ElasticacheSecurityGroup
+    Properties:
+      AutoMinorVersionUpgrade: "true"
+      Engine: "memcached"
+      CacheNodeType: "cache.t2.micro"
+      NumCacheNodes: "1"
+      VpcSecurityGroupIds:
+        -
+          Fn::GetAtt:
+            - "ElasticacheSecurityGroup"
+            - "GroupId"
+  WebServerSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: 'Enable HTTP access to ELB and SSH access to anyone'
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: '80'
+          ToPort: '80'
+          SourceSecurityGroupId:
+            Ref: "ELBSecurityGroup"
+        - IpProtocol: tcp
+          FromPort: '22'
+          ToPort: '22'
+          CidrIp: 0.0.0.0/0
+  ELBSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: 'Enable HTTP access to anyone'
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: '80'
+          ToPort: '80'
+          CidrIp: 0.0.0.0/0
+  ElasticacheSecurityGroup:
+    Type: "AWS::EC2::SecurityGroup"
+    DependsOn: 'WebServerSecurityGroup'
+    Properties:
+      GroupDescription: "Elasticache Security Group"
+      SecurityGroupIngress:
+        - IpProtocol: "tcp"
+          FromPort: "11211"
+          ToPort: "11211"
+          SourceSecurityGroupId:
+            Ref: "WebServerSecurityGroup"
+  DBEC2SecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    DependsOn: 'WebServerSecurityGroup'
+    Properties:
+      GroupDescription: Frontend Access
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: !Ref DBPort
+          ToPort: !Ref DBPort
+          SourceSecurityGroupId:
+            Ref: "WebServerSecurityGroup"
+  WebServerRole:
+    Type: 'AWS::IAM::Role'
+    DependsOn: 'WebServerSecurityGroup'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+                - codedeploy.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      Policies:
+        - PolicyName: S3Access
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 's3:*'
+                Resource: '*'
+        - PolicyName: EC2Access
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'ec2:*'
+                  - 'autoscaling:*'
+                Resource: '*'
+        - PolicyName: CfnAccess
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'cloudformation:DescribeStacks'
+                  - 'cloudformation:DescribeStackEvents'
+                  - 'cloudformation:DescribeStackResource'
+                  - 'cloudformation:DescribeStackResources'
+                  - 'cloudformation:GetTemplate'
+                  - 'cloudformation:List*'
+                Resource: '*'
+  WebServerInstanceProfile:
+    Type: 'AWS::IAM::InstanceProfile'
+    DependsOn: WebServerRole
+    Properties:
+      Path: /
+      Roles:
+        - !Ref WebServerRole
+  DBSubnetGroup:
+    Type: 'AWS::RDS::DBSubnetGroup'
+    Properties:
+      DBSubnetGroupDescription: WebServer DB subnet group
+      SubnetIds:
+        - subnet-fb2c209e
+        - subnet-063c705f
+        - subnet-bd6155ca
+  DBInstance:
+    Type: 'AWS::RDS::DBInstance'
+    DependsOn: DBEC2SecurityGroup
+    Properties:
+      DBInstanceIdentifier: WebServerRDS
+      Engine: MySQL
+      MultiAZ: !Ref MultiAZDatabase
+      MasterUsername: 'admin'
+      MasterUserPassword: 'admin123'
+      DBInstanceClass: !Ref DBClass
+      AllocatedStorage: !Ref DBAllocatedStorage
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      Port: !Ref DBPort
+      StorageType: gp2
+      AutoMinorVersionUpgrade: 'true'
+      BackupRetentionPeriod: 5
+      PreferredBackupWindow: '02:30-03:30'
+      PreferredMaintenanceWindow: 'sun:04:30-sun:05:30'
+      VPCSecurityGroups:
+        - !GetAtt
+          - DBEC2SecurityGroup
+          - GroupId
+Outputs:
+  Bucket:
+    Value: !Ref S3Bucket
+  Application:
+    Value: !Ref WebServerApplication
+  DeploymentGroup:
+    Value: !Ref DeploymentGroup
+  Memcached:
+    Value: !Join
+      - ''
+      - - !GetAtt
+          - ElasticacheCluster
+          - ConfigurationEndpoint.Address
+        - ':'
+        - !GetAtt
+          - ElasticacheCluster
+          - ConfigurationEndpoint.Port
+  RDSInstance:
+    Value: !Join
+      - ''
+      - - !GetAtt
+          - DBInstance
+          - Endpoint.Address
+        - ':'
+        - !GetAtt
+          - DBInstance
+          - Endpoint.Port
+    Description: RDS instance Endpoint

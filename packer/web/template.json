@@ -2,8 +2,8 @@
    "builders" : [
       {
          "type" : "amazon-ebs",
-         "name" : "php-webservice-3",
-         "ami_name" : "php-webservice-3",
+         "name" : "php-webservice-4",
+         "ami_name" : "php-webservice-4",
          "region" : "eu-west-1",
          "ssh_timeout" : "10m",
          "instance_type" : "t2.medium",

@@ -1,11 +1,11 @@
 #!/bin/bash
 
-APPNAME="phpWebApp";
-DEPLOYMENT_GROUP="phpWebAppDeploymentGroup";
+APPNAME="taskio-7-WebServerApplication-C9MFK5BHQFVQ";
+DEPLOYMENT_GROUP="taskio-7-DeploymentGroup-10IB7UAZYQ3R4";
 DATE=$(date '+%Y-%m-%d');
 TIME=$(date '+%s');
 PACKAGE=$(echo "${APPNAME}-${DATE}-${TIME}.tar.gz");
-S3_BUCKET="php-webservice"
+S3_BUCKET="taskio-7-s3bucket-1ak1xxmyt2a3r"
 
 cd app/
 #./prepare-for-build.sh

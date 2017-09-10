@@ -14,7 +14,7 @@ hooks:
     - location: scripts/cache_writable.sh
       runas: root
       timeout: 120
-    - location: scripts/configure-environment.sh
+    - location: scripts/configure-app-parameters.sh
       runas: root
       timeout: 120
   ApplicationStart:

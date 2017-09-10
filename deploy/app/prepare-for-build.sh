@@ -7,7 +7,7 @@ echo "- Clearing local cache";
 rm -rf app/cache/*
 
 echo "- Inserting configs";
-source conf/insert-configs.sh
+source conf/insert-configs-aws.sh
 
 #echo "- Fetching master"
 #git fetch --all
